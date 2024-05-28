@@ -45,4 +45,4 @@ const initializeDatabase = async () => {
   }
 };
 
-module.exports = { testConnection, initializeDatabase };
+module.exports = { createConnection, testConnection, initializeDatabase };

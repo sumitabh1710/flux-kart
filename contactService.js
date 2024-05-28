@@ -1,41 +1,45 @@
-const fetchContact = async (connection, columnName, columnValue) => {
-  const [rows] = await connection.execute(
-    `SELECT * FROM Contact WHERE ${columnName} = ?`,
-    [columnValue]
-  );
+const { pool } = require("./db");
+
+const fetchContact = async (columnName, columnValue) => {
+  const query = {
+    text: `SELECT * FROM Contact WHERE ${columnName} = $1`,
+    values: [columnValue],
+  };
+
+  const { rows } = await pool.query(query);
   return rows;
 };
 
-const fetchContactByEmailAndPhone = async (connection, email, phoneNumber) => {
-  const [rows] = await connection.execute(
-    `SELECT * FROM Contact WHERE email = ? AND phoneNumber = ?`,
-    [email, phoneNumber]
-  );
+const fetchContactByEmailAndPhone = async (email, phoneNumber) => {
+  const query = {
+    text: "SELECT * FROM Contact WHERE email = $1 AND phoneNumber = $2",
+    values: [email, phoneNumber],
+  };
+
+  const { rows } = await pool.query(query);
   return rows;
 };
 
-const createContact = async (
-  connection,
-  email,
-  phoneNumber,
-  linkedId,
-  linkPrecedence
-) => {
-  const [result] = await connection.execute(
-    `INSERT INTO Contact (email, phoneNumber, linkedId, linkPrecedence, createdAt, updatedAt) VALUES (?, ?, ?, ?, NOW(), NOW())`,
-    [email, phoneNumber, linkedId, linkPrecedence]
-  );
-  return result.insertId;
+const createContact = async (email, phoneNumber, linkedId, linkPrecedence) => {
+  const query = {
+    text: `INSERT INTO Contact (email, phoneNumber, linkedId, linkPrecedence, createdAt, updatedAt) VALUES ($1, $2, $3, $4, NOW(), NOW()) RETURNING id`,
+    values: [email, phoneNumber, linkedId, linkPrecedence],
+  };
+
+  const { rows } = await pool.query(query);
+  return rows[0].id;
 };
 
-const updateContact = async (connection, contactId, linkedId) => {
-  await connection.execute(
-    `UPDATE Contact SET linkedId = ?, linkPrecedence = 'secondary', updatedAt = NOW() WHERE id = ?`,
-    [linkedId, contactId]
-  );
+const updateContact = async (contactId, linkedId) => {
+  const query = {
+    text: `UPDATE Contact SET linkedId = $1, linkPrecedence = 'secondary', updatedAt = NOW() WHERE id = $2`,
+    values: [linkedId, contactId],
+  };
+
+  await pool.query(query);
 };
 
-const consolidateContact = async (connection, email, phoneNumber) => {
+const consolidateContact = async (email, phoneNumber) => {
   let primaryContact = null;
   let primaryContact2 = null;
   let secondaryContacts = [];
@@ -43,25 +47,20 @@ const consolidateContact = async (connection, email, phoneNumber) => {
   let phoneNumbers = [];
 
   const existingContactByEmailAndPhone = await fetchContactByEmailAndPhone(
-    connection,
     email,
     phoneNumber
   );
 
   if (existingContactByEmailAndPhone.length > 0) {
-    await connection.execute(
-      `UPDATE Contact SET updatedAt = NOW() WHERE email = ? AND phoneNumber = ?`,
+    await pool.query(
+      `UPDATE Contact SET updated_at = NOW() WHERE email = $1 AND phoneNumber = $2`,
       [email, phoneNumber]
     );
 
-    return {message: "Already Exists !"}
+    return { message: "Already Exists !" };
   }
 
-  const existingContactsByEmail = await fetchContact(
-    connection,
-    "email",
-    email
-  );
+  const existingContactsByEmail = await fetchContact("email", email);
 
   existingContactsByEmail.forEach((contact) => {
     if (contact.linkPrecedence === "primary") {
@@ -72,7 +71,6 @@ const consolidateContact = async (connection, email, phoneNumber) => {
   });
 
   const existingContactsByPhone = await fetchContact(
-    connection,
     "phoneNumber",
     phoneNumber
   );
@@ -91,7 +89,6 @@ const consolidateContact = async (connection, email, phoneNumber) => {
 
   if (!primaryContact) {
     const newContactId = await createContact(
-      connection,
       email,
       phoneNumber,
       null,
@@ -110,10 +107,9 @@ const consolidateContact = async (connection, email, phoneNumber) => {
       phoneNumber !== primaryContact.phoneNumber
     ) {
       if (primaryContact2) {
-        await updateContact(connection, primaryContact2.id, primaryContact.id);
+        await updateContact(primaryContact2.id, primaryContact.id);
       } else {
         const newContactId = await createContact(
-          connection,
           email,
           phoneNumber,
           primaryContact.id,
@@ -132,7 +128,7 @@ const consolidateContact = async (connection, email, phoneNumber) => {
 
   for (const contact of secondaryContacts) {
     if (contact.linkedId !== primaryContact.id) {
-      await updateContact(connection, contact.id, primaryContact.id);
+      await updateContact(contact.id, primaryContact.id);
     }
   }
 

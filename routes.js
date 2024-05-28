@@ -1,5 +1,5 @@
 const express = require("express");
-const { createConnection } = require('./db');
+const { pool } = require("./db");
 const { consolidateContact } = require("./contactService");
 
 const router = express.Router();
@@ -14,9 +14,9 @@ router.post("/", async (req, res) => {
   }
 
   try {
-    const connection = await createConnection();
-    const contact = await consolidateContact(connection, email, phoneNumber);
-    await connection.end();
+    const client = await pool.connect();
+    const contact = await consolidateContact(email, phoneNumber);
+    client.release();
     res.status(200).send({ contact });
   } catch (error) {
     console.error("Failed to consolidate contact:", error.message);

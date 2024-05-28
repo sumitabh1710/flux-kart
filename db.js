@@ -21,4 +21,28 @@ const testConnection = async () => {
   }
 };
 
-module.exports = { testConnection };
+const initializeDatabase = async () => {
+  const connection = await createConnection();
+  try {
+    await connection.execute(`
+        CREATE TABLE IF NOT EXISTS Contact (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          phoneNumber VARCHAR(20),
+          email VARCHAR(100),
+          linkedId INT DEFAULT NULL,
+          linkPrecedence ENUM('primary', 'secondary') DEFAULT 'primary',
+          createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          deletedAt DATETIME DEFAULT NULL,
+          FOREIGN KEY (linkedId) REFERENCES Contact(id)
+        )
+      `);
+    console.log("Database initialized successfully!");
+  } catch (error) {
+    console.error("Failed to initialize database:", error.message);
+  } finally {
+    await connection.end();
+  }
+};
+
+module.exports = { testConnection, initializeDatabase };

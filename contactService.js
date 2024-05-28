@@ -6,6 +6,14 @@ const fetchContact = async (connection, columnName, columnValue) => {
   return rows;
 };
 
+const fetchContactByEmailAndPhone = async (connection, email, phoneNumber) => {
+  const [rows] = await connection.execute(
+    `SELECT * FROM Contact WHERE email = ? AND phoneNumber = ?`,
+    [email, phoneNumber]
+  );
+  return rows;
+};
+
 const createContact = async (
   connection,
   email,
@@ -29,9 +37,25 @@ const updateContact = async (connection, contactId, linkedId) => {
 
 const consolidateContact = async (connection, email, phoneNumber) => {
   let primaryContact = null;
+  let primaryContact2 = null;
   let secondaryContacts = [];
   let emails = [];
   let phoneNumbers = [];
+
+  const existingContactByEmailAndPhone = await fetchContactByEmailAndPhone(
+    connection,
+    email,
+    phoneNumber
+  );
+
+  if (existingContactByEmailAndPhone.length > 0) {
+    await connection.execute(
+      `UPDATE Contact SET updatedAt = NOW() WHERE email = ? AND phoneNumber = ?`,
+      [email, phoneNumber]
+    );
+
+    return {message: "Already Exists !"}
+  }
 
   const existingContactsByEmail = await fetchContact(
     connection,
@@ -53,9 +77,13 @@ const consolidateContact = async (connection, email, phoneNumber) => {
     phoneNumber
   );
 
-  existingContactsByEmail.forEach(async (contact) => {
+  existingContactsByPhone.forEach(async (contact) => {
     if (contact.linkPrecedence === "primary") {
-        await updateContact(connection, contact.id, primaryContact.id);
+      if (primaryContact) {
+        primaryContact2 = contact;
+      } else {
+        primaryContact = contact;
+      }
     } else {
       secondaryContacts.push(contact);
     }
@@ -81,20 +109,24 @@ const consolidateContact = async (connection, email, phoneNumber) => {
       email !== primaryContact.email ||
       phoneNumber !== primaryContact.phoneNumber
     ) {
-      const newContactId = await createContact(
-        connection,
-        email,
-        phoneNumber,
-        primaryContact.id,
-        "secondary"
-      );
-      secondaryContacts.push({
-        id: newContactId,
-        email,
-        phoneNumber,
-        linkedId: primaryContact.id,
-        linkPrecedence: "secondary",
-      });
+      if (primaryContact2) {
+        await updateContact(connection, primaryContact2.id, primaryContact.id);
+      } else {
+        const newContactId = await createContact(
+          connection,
+          email,
+          phoneNumber,
+          primaryContact.id,
+          "secondary"
+        );
+        secondaryContacts.push({
+          id: newContactId,
+          email,
+          phoneNumber,
+          linkedId: primaryContact.id,
+          linkPrecedence: "secondary",
+        });
+      }
     }
   }
 
